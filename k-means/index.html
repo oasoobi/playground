@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultra Fast Color Extractor</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg:#0a0a0f; --surface:#111118; --border:rgba(255,255,255,0.07); --text:#e8e8f0; --muted:rgba(232,232,240,0.4); --accent:#7c6cff; }
+  body { background:var(--bg); color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:48px 24px; overflow-x:hidden; }
+  body::before { content:''; position:fixed; inset:0; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E"); pointer-events:none; z-index:999; opacity:0.5; }
+  header { text-align:center; margin-bottom:48px; }
+  header h1 { font-size:clamp(2rem,6vw,3.5rem); font-weight:800; letter-spacing:-0.03em; line-height:1; background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.5) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  header p { margin-top:12px; font-family:'DM Mono',monospace; font-size:0.75rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; }
+  .main-card { width:100%; max-width:760px; background:var(--surface); border:1px solid var(--border); border-radius:20px; overflow:hidden; }
+  .drop-zone { padding:60px 40px; display:flex; flex-direction:column; align-items:center; gap:16px; cursor:pointer; border-bottom:1px solid var(--border); transition:background 0.2s; }
+  .drop-zone.drag-over { background:rgba(124,108,255,0.06); }
+  .drop-icon { width:56px; height:56px; border-radius:16px; border:1.5px dashed rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:1.5rem; transition:border-color 0.2s,transform 0.2s; pointer-events:none; }
+  .drop-zone:hover .drop-icon { border-color:var(--accent); transform:scale(1.05); }
+  .drop-label { font-size:1rem; font-weight:700; letter-spacing:-0.01em; pointer-events:none; }
+  .drop-sub { font-family:'DM Mono',monospace; font-size:0.7rem; color:var(--muted); letter-spacing:0.05em; pointer-events:none; }
+  .result-section { display:none; padding:32px; gap:32px; }
+  .result-section.visible { display:flex; flex-wrap:wrap; }
+  .preview-col { flex:0 0 220px; }
+  .preview-col img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:12px; border:1px solid var(--border); }
+  .colors-col { flex:1; min-width:200px; display:flex; flex-direction:column; gap:12px; }
+  .section-label { font-family:'DM Mono',monospace; font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .palette { display:flex; flex-direction:column; gap:8px; }
+  .color-row { display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,0.02); cursor:pointer; transition:background 0.15s,transform 0.15s; animation:slideIn 0.3s ease both; }
+  .color-row:hover { background:rgba(255,255,255,0.05); transform:translateX(4px); }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
+  .color-swatch { width:32px; height:32px; border-radius:8px; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
+  .color-info { display:flex; flex-direction:column; gap:2px; }
+  .color-hex { font-family:'DM Mono',monospace; font-size:0.85rem; }
+  .color-pct { font-family:'DM Mono',monospace; font-size:0.65rem; color:var(--muted); }
+  .color-badge { font-family:'DM Mono',monospace; font-size:0.6rem; padding:3px 8px; border-radius:4px; border:1px solid rgba(255,255,255,0.1); color:var(--muted); margin-left:auto; white-space:nowrap; }
+  .bg-preview-section { border-top:1px solid var(--border); padding:32px; display:none; }
+  .bg-preview-section.visible { display:block; }
+  .bg-cards { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; }
+  .bg-card { flex:1; min-width:160px; border-radius:12px; padding:24px; border:1px solid rgba(255,255,255,0.08); }
+  .bg-card-title { font-size:0.8rem; font-weight:700; margin-bottom:4px; }
+  .loading { display:none; flex-direction:column; align-items:center; padding:40px; border-top:1px solid var(--border); gap:12px; }
+  .loading.visible { display:flex; }
+  .spinner { width:24px; height:24px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.6s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .toast { position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(80px); background:#fff; color:#000; padding:10px 20px; border-radius:100px; font-family:'DM Mono',monospace; font-size:0.75rem; transition:transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index:1000; white-space:nowrap; }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>COLOR EXTRACTOR</h1>
+  <p>K-MEANS PALETTE ANALYZER</p>
+</header>
+
+<div class="main-card">
+  <input type="file" accept="image/*" id="fileInput" style="display:none">
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">🎨</div>
+    <div class="drop-label">画像をドロップ or クリック</div>
+    <div class="drop-sub">JPG · PNG · WebP · GIF 対応</div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div style="font-family:'DM Mono'; font-size:0.7rem; color:var(--muted);">ANALYZING...</div>
+  </div>
+
+  <div class="result-section" id="resultSection">
+    <div class="preview-col"><img id="previewImg" src="" alt="preview"></div>
+    <div class="colors-col">
+      <div class="section-label">Main Palette</div>
+      <div class="palette" id="palette"></div>
+    </div>
+  </div>
+
+  <div class="bg-preview-section" id="bgPreview">
+    <div class="section-label">Background Preview</div>
+    <div class="bg-cards" id="bgCards"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── K-Means（メインスレッド・同期）────────────────────────────────────
+function kMeans(pixels, k, iters) {
+  const n = pixels.length / 3;
+  if (n < k) return [];
+
+  // 初期重心: 均等間隔でサンプリング
+  const centers = new Float32Array(k * 3);
+  for (let i = 0; i < k; i++) {
+    const idx = Math.floor(i * (n / k)) * 3;
+    centers[i*3]   = pixels[idx];
+    centers[i*3+1] = pixels[idx+1];
+    centers[i*3+2] = pixels[idx+2];
+  }
+
+  const assign = new Int32Array(n);
+  const sums   = new Float64Array(k * 4);
+
+  for (let iter = 0; iter < iters; iter++) {
+    let changed = false;
+
+    for (let i = 0; i < n; i++) {
+      const r = pixels[i*3], g = pixels[i*3+1], b = pixels[i*3+2];
+      let best = 0, minD = Infinity;
+      for (let c = 0; c < k; c++) {
+        const dr = r - centers[c*3];
+        const dg = g - centers[c*3+1];
+        const db = b - centers[c*3+2];
+        const d  = dr*dr + dg*dg + db*db;
+        if (d < minD) { minD = d; best = c; }
+      }
+      if (assign[i] !== best) { assign[i] = best; changed = true; }
+    }
+
+    if (!changed) break;
+    sums.fill(0);
+
+    for (let i = 0; i < n; i++) {
+      const c = assign[i];
+      sums[c*4]   += pixels[i*3];
+      sums[c*4+1] += pixels[i*3+1];
+      sums[c*4+2] += pixels[i*3+2];
+      sums[c*4+3] += 1;
+    }
+    for (let c = 0; c < k; c++) {
+      const cnt = sums[c*4+3];
+      if (cnt > 0) {
+        centers[c*3]   = sums[c*4]   / cnt;
+        centers[c*3+1] = sums[c*4+1] / cnt;
+        centers[c*3+2] = sums[c*4+2] / cnt;
+      }
+    }
+  }
+
+  const counts = new Int32Array(k);
+  for (let i = 0; i < n; i++) counts[assign[i]]++;
+
+  const out = [];
+  for (let c = 0; c < k; c++) {
+    if (counts[c] > 0) {
+      out.push({ color: [centers[c*3], centers[c*3+1], centers[c*3+2]], count: counts[c] });
+    }
+  }
+  return out.sort((a, b) => b.count - a.count);
+}
+
+// ─── ピクセル抽出（canvas）─────────────────────────────────────────────
+function getPixelsFromImage(img) {
+  const MAX = 80;
+  const sw = img.naturalWidth, sh = img.naturalHeight;
+  const w = Math.min(MAX, sw);
+  const h = Math.max(1, Math.round(sh * (w / sw)));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const raw = ctx.getImageData(0, 0, w, h).data;
+  const out = [];
+  for (let i = 0; i < raw.length; i += 4) {
+    if (raw[i+3] > 128) out.push(raw[i], raw[i+1], raw[i+2]);
+  }
+  return { pixels: new Uint8Array(out), total: out.length / 3 };
+}
+
+// ─── カラー名 ──────────────────────────────────────────────────────────
+function getHSL(r, g, b) {
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+  let h=0, s=0, l=(max+min)/2;
+  if (d > 0) {
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if      (max===r) h = (g-b)/d + (g<b ? 6 : 0);
+    else if (max===g) h = (b-r)/d + 2;
+    else              h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return [h*360, s*100, l*100];
+}
+
+function colorName([r, g, b]) {
+  const [h, s, l] = getHSL(r, g, b);
+  if (s < 12) return l < 25 ? 'Dark' : l > 80 ? 'Light' : 'Gray';
+  if (h < 20 || h >= 340) return 'Red';
+  if (h < 50)  return 'Orange';
+  if (h < 80)  return 'Yellow';
+  if (h < 160) return 'Green';
+  if (h < 200) return 'Cyan';
+  if (h < 260) return 'Blue';
+  if (h < 300) return 'Purple';
+  return 'Pink';
+}
+
+const toHex = (r, g, b) =>
+  '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2,'0')).join('').toUpperCase();
+
+// ─── UI ────────────────────────────────────────────────────────────────
+function resetUI() {
+  document.getElementById('loading').classList.remove('visible');
+  document.getElementById('resultSection').classList.remove('visible');
+  document.getElementById('bgPreview').classList.remove('visible');
+}
+
+function showResults(results, total) {
+  const pal = document.getElementById('palette');
+  pal.innerHTML = '';
+
+  results.forEach((item, i) => {
+    const { color, count } = item;
+    const hex = toHex(...color);
+    const pct = Math.round(count / total * 100);
+
+    const row = document.createElement('div');
+    row.className = 'color-row';
+    row.style.animationDelay = `${i * 0.05}s`;
+    row.innerHTML = `
+      <div class="color-swatch" style="background:${hex}"></div>
+      <div class="color-info">
+        <div class="color-hex">${hex}</div>
+        <div class="color-pct">${pct}%</div>
+      </div>
+      <div class="color-badge">${colorName(color)}</div>`;
+    row.addEventListener('click', () => {
+      navigator.clipboard.writeText(hex).catch(() => {});
+      showToast(`COPIED: ${hex}`);
+    });
+    pal.appendChild(row);
+  });
+
+  const bgCards = document.getElementById('bgCards');
+  bgCards.innerHTML = '';
+  results.slice(0, 3).forEach((item, i) => {
+    const { color } = item;
+    const hex = toHex(...color);
+    const card = document.createElement('div');
+    card.className = 'bg-card';
+    const bg = (i === 2 && results.length > 1)
+      ? `linear-gradient(135deg, ${toHex(...results[0].color)}, ${hex})`
+      : hex;
+    card.style.background = bg;
+    const luma = color[0]*0.299 + color[1]*0.587 + color[2]*0.114;
+    card.style.color = luma > 160 ? '#000' : '#fff';
+    card.innerHTML = `<div class="bg-card-title">${['Dominant','Vibrant','Gradient'][i]}</div>`;
+    bgCards.appendChild(card);
+  });
+
+  document.getElementById('resultSection').classList.add('visible');
+  document.getElementById('bgPreview').classList.add('visible');
+}
+
+function showToast(txt) {
+  const t = document.getElementById('toast');
+  t.textContent = txt;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+// ─── メイン処理 ────────────────────────────────────────────────────────
+function process(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+
+  resetUI();
+  document.getElementById('loading').classList.add('visible');
+
+  // Safari/iOS は createObjectURL が不安定なケースがあるため
+  // FileReader で base64 に変換してから img に渡す
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    const dataURL = reader.result;
+    const img = new Image();
+
+    img.onload = async () => {
+      // 画像データがメモリ上で完全に展開されるのを待つ
+      try { await img.decode(); } catch (_) {}
+
+      // プレビュー表示
+      document.getElementById('previewImg').src = dataURL;
+
+      try {
+        const { pixels, total } = getPixelsFromImage(img);
+        const results = kMeans(pixels, 6, 10);
+        document.getElementById('loading').classList.remove('visible');
+        showResults(results, total);
+      } catch (e) {
+        console.error(e);
+        document.getElementById('loading').classList.remove('visible');
+        showToast('ERROR: ' + e.message);
+      }
+    };
+
+    img.onerror = () => {
+      document.getElementById('loading').classList.remove('visible');
+      showToast('ERROR: 画像を読み込めませんでした');
+    };
+
+    img.src = dataURL;
+  };
+
+  reader.onerror = () => {
+    document.getElementById('loading').classList.remove('visible');
+    showToast('ERROR: ファイルを読み込めませんでした');
+  };
+
+  reader.readAsDataURL(file);
+}
+
+// ─── イベント ──────────────────────────────────────────────────────────
+const dz        = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dz.addEventListener('click', () => fileInput.click());
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  process(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  process(e.target.files[0]);
+  fileInput.value = '';
+});
+</script>
+</body>
+</html>

@@ -1,80 +1,672 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Quick Draw風リアルタイム判定</title>
-<style>
-  body { font-family: sans-serif; text-align: center; }
-  canvas { border: 1px solid #000; touch-action: none; }
-  #result { font-size: 1.2em; margin-top: 10px; }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI お絵描き当て - TensorFlow.js</title>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/quickdraw-doodle-classifier"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;800&display=swap');
+
+:root {
+–bg: #0f0e17;
+–surface: #1a1828;
+–card: #221f35;
+–accent: #ff6b35;
+–yellow: #ffd166;
+–green: #06d6a0;
+–text: #fffffe;
+–muted: #a7a9be;
+–red: #ef476f;
+}
+
+- { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: ‘Nunito’, sans-serif;
+min-height: 100vh;
+display: flex;
+flex-direction: column;
+align-items: center;
+padding: 24px 16px 48px;
+}
+
+h1 {
+font-family: ‘Fredoka One’, cursive;
+font-size: clamp(1.8rem, 5vw, 2.8rem);
+color: var(–yellow);
+text-shadow: 3px 3px 0 var(–accent);
+margin-bottom: 4px;
+}
+
+.subtitle {
+color: var(–muted);
+font-size: 0.9rem;
+font-weight: 700;
+margin-bottom: 20px;
+}
+
+.main {
+width: 100%;
+max-width: 520px;
+display: flex;
+flex-direction: column;
+gap: 16px;
+}
+
+/* お題カード */
+.prompt-card {
+background: var(–card);
+border-radius: 18px;
+padding: 14px 24px;
+display: flex;
+align-items: center;
+justify-content: space-between;
+border: 2px solid rgba(255,209,102,0.2);
+}
+
+.prompt-left .label {
+font-size: 0.72rem;
+color: var(–yellow);
+font-weight: 800;
+text-transform: uppercase;
+letter-spacing: 2px;
+}
+
+.prompt-word {
+font-family: ‘Fredoka One’, cursive;
+font-size: 2rem;
+color: var(–text);
+margin-top: 2px;
+}
+
+.prompt-word em {
+color: var(–accent);
+font-style: normal;
+}
+
+.next-btn {
+background: rgba(255,255,255,0.07);
+border: 1px solid rgba(255,255,255,0.15);
+border-radius: 10px;
+color: var(–muted);
+font-family: ‘Nunito’, sans-serif;
+font-weight: 800;
+font-size: 0.8rem;
+padding: 8px 14px;
+cursor: pointer;
+transition: all 0.15s;
+}
+.next-btn:hover {
+border-color: var(–yellow);
+color: var(–yellow);
+}
+
+/* キャンバスエリア */
+.canvas-area {
+position: relative;
+border-radius: 20px;
+overflow: hidden;
+box-shadow: 0 0 0 3px var(–accent), 0 16px 48px rgba(0,0,0,0.5);
+cursor: crosshair;
+touch-action: none;
+}
+
+canvas {
+display: block;
+background: #fff;
+width: 100%;
+}
+
+/* リアルタイム判定オーバーレイ */
+.live-result {
+position: absolute;
+bottom: 12px;
+left: 12px;
+right: 12px;
+background: rgba(15,14,23,0.85);
+backdrop-filter: blur(8px);
+border-radius: 12px;
+padding: 10px 14px;
+display: flex;
+align-items: center;
+gap: 10px;
+min-height: 44px;
+}
+
+.live-dot {
+width: 8px; height: 8px;
+border-radius: 50%;
+background: var(–green);
+flex-shrink: 0;
+animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+0%, 100% { opacity: 1; transform: scale(1); }
+50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.live-text {
+font-size: 0.85rem;
+color: var(–muted);
+font-weight: 700;
+}
+
+.live-guess {
+font-family: ‘Fredoka One’, cursive;
+font-size: 1.1rem;
+color: var(–yellow);
+margin-left: auto;
+text-align: right;
+}
+
+/* ヒット演出 */
+.hit-flash {
+position: absolute;
+inset: 0;
+background: rgba(6,214,160,0.25);
+border-radius: 20px;
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.1s;
+}
+.hit-flash.show { opacity: 1; }
+
+/* ツールバー */
+.toolbar {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+
+.tool-btn {
+background: var(–card);
+border: 2px solid rgba(255,255,255,0.08);
+border-radius: 12px;
+color: var(–text);
+font-family: ‘Nunito’, sans-serif;
+font-weight: 700;
+font-size: 0.82rem;
+padding: 8px 14px;
+cursor: pointer;
+transition: all 0.15s;
+}
+.tool-btn:hover { border-color: var(–yellow); color: var(–yellow); }
+.tool-btn.active { background: var(–yellow); color: var(–bg); border-color: var(–yellow); }
+
+.size-wrap {
+margin-left: auto;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.size-wrap span { font-size: 0.75rem; color: var(–muted); font-weight: 700; }
+
+input[type=range] {
+-webkit-appearance: none;
+width: 72px; height: 5px;
+border-radius: 999px;
+background: rgba(255,255,255,0.15);
+outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+-webkit-appearance: none;
+width: 14px; height: 14px;
+border-radius: 50%;
+background: var(–yellow);
+cursor: pointer;
+}
+
+/* トップ5リスト */
+.top5 {
+background: var(–card);
+border-radius: 18px;
+padding: 16px 20px;
+border: 1px solid rgba(255,255,255,0.06);
+}
+
+.top5-title {
+font-size: 0.72rem;
+color: var(–muted);
+font-weight: 800;
+text-transform: uppercase;
+letter-spacing: 2px;
+margin-bottom: 12px;
+}
+
+.top5-list {
+display: flex;
+flex-direction: column;
+gap: 7px;
+}
+
+.top5-item {
+display: flex;
+align-items: center;
+gap: 10px;
+}
+
+.top5-rank {
+font-family: ‘Fredoka One’, cursive;
+font-size: 1rem;
+color: var(–muted);
+width: 20px;
+text-align: center;
+}
+
+.top5-bar-wrap {
+flex: 1;
+background: rgba(255,255,255,0.06);
+border-radius: 999px;
+height: 8px;
+overflow: hidden;
+}
+
+.top5-bar {
+height: 100%;
+border-radius: 999px;
+background: linear-gradient(90deg, var(–accent), var(–yellow));
+transition: width 0.4s ease;
+}
+
+.top5-item.rank1 .top5-bar {
+background: linear-gradient(90deg, var(–green), #04c98a);
+}
+
+.top5-label {
+font-weight: 800;
+font-size: 0.88rem;
+min-width: 120px;
+color: var(–text);
+}
+
+.top5-score {
+font-size: 0.8rem;
+color: var(–muted);
+font-weight: 700;
+min-width: 40px;
+text-align: right;
+}
+
+/* 正解バナー */
+.correct-banner {
+position: fixed;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%) scale(0);
+background: linear-gradient(135deg, var(–green), #04a87e);
+border-radius: 24px;
+padding: 28px 40px;
+text-align: center;
+z-index: 200;
+transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+pointer-events: none;
+box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.correct-banner.show {
+transform: translate(-50%, -50%) scale(1);
+pointer-events: all;
+}
+.correct-banner .big { font-family: ‘Fredoka One’, cursive; font-size: 3rem; }
+.correct-banner .sub { font-size: 1rem; font-weight: 700; margin-top: 4px; opacity: 0.85; }
+
+/* モデルローディング */
+.loading-bar-wrap {
+background: rgba(255,255,255,0.07);
+border-radius: 999px;
+height: 8px;
+overflow: hidden;
+width: 100%;
+}
+.loading-bar {
+height: 100%;
+border-radius: 999px;
+background: linear-gradient(90deg, var(–accent), var(–yellow));
+width: 0%;
+animation: loadAnim 2s ease-in-out infinite alternate;
+}
+@keyframes loadAnim { to { width: 90%; } }
+
+.status-box {
+background: var(–card);
+border-radius: 14px;
+padding: 16px 20px;
+text-align: center;
+}
+.status-box p { font-size: 0.9rem; color: var(–muted); font-weight: 700; margin-bottom: 10px; }
+
+/* スコア */
+.score-row {
+display: flex;
+gap: 10px;
+}
+.score-card {
+flex: 1;
+background: var(–card);
+border-radius: 14px;
+padding: 10px;
+text-align: center;
+}
+.score-num { font-family: ‘Fredoka One’, cursive; font-size: 1.7rem; line-height: 1; }
+.score-label { font-size: 0.68rem; color: var(–muted); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+</style>
+
 </head>
 <body>
-<h1>Quick Draw風ゲーム</h1>
-<p>描いてみてね！リアルタイムで判定されます</p>
-<canvas id="canvas" width="280" height="280"></canvas>
-<br>
-<button id="clearBtn">クリア</button>
-<div id="result">ここに判定結果が出ます</div>
+
+<h1>🎨 AI お絵描き当て</h1>
+<p class="subtitle">TensorFlow.js MobileNet リアルタイム判定</p>
+
+<div class="main">
+
+  <!-- ステータス/ローディング -->
+
+  <div class="status-box" id="statusBox">
+    <p id="statusText">🤖 AIモデルを読み込み中...</p>
+    <div class="loading-bar-wrap"><div class="loading-bar" id="loadingBar"></div></div>
+  </div>
+
+  <!-- スコア -->
+
+  <div class="score-row">
+    <div class="score-card">
+      <div class="score-num" style="color:var(--green)" id="correctCount">0</div>
+      <div class="score-label">正解</div>
+    </div>
+    <div class="score-card">
+      <div class="score-num" style="color:var(--red)" id="wrongCount">0</div>
+      <div class="score-label">スキップ</div>
+    </div>
+    <div class="score-card">
+      <div class="score-num" style="color:var(--yellow)" id="totalCount">0</div>
+      <div class="score-label">合計</div>
+    </div>
+  </div>
+
+  <!-- お題 -->
+
+  <div class="prompt-card">
+    <div class="prompt-left">
+      <div class="label">✏️ お題</div>
+      <div class="prompt-word" id="promptWord"><em>ロード中...</em></div>
+    </div>
+    <button class="next-btn" onclick="skipPrompt()">⏭ スキップ</button>
+  </div>
+
+  <!-- キャンバス -->
+
+  <div class="canvas-area" id="canvasArea">
+    <canvas id="canvas" width="480" height="360"></canvas>
+    <div class="live-result">
+      <div class="live-dot"></div>
+      <div class="live-text" id="liveText">描いてみて！</div>
+      <div class="live-guess" id="liveGuess"></div>
+    </div>
+    <div class="hit-flash" id="hitFlash"></div>
+  </div>
+
+  <!-- ツールバー -->
+
+  <div class="toolbar">
+    <button class="tool-btn active" id="penBtn" onclick="setTool('pen')">✏️ ペン</button>
+    <button class="tool-btn" id="eraserBtn" onclick="setTool('eraser')">🧹 消す</button>
+    <button class="tool-btn" onclick="clearCanvas()">🗑️ 全消し</button>
+    <div class="size-wrap">
+      <span>太さ</span>
+      <input type="range" id="sizeSlider" min="2" max="24" value="6">
+    </div>
+  </div>
+
+  <!-- TOP5 -->
+
+  <div class="top5">
+    <div class="top5-title">🔍 AIの推測 TOP5</div>
+    <div class="top5-list" id="top5List">
+      <div style="color:var(--muted);font-size:0.85rem;font-weight:700">描き始めると判定が出るよ！</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 正解バナー -->
+
+<div class="correct-banner" id="correctBanner">
+  <div class="big">🎉 正解！</div>
+  <div class="sub" id="correctSub"></div>
+</div>
 
 <script>
-let canvas = document.getElementById('canvas');
-let ctx = canvas.getContext('2d');
-ctx.lineWidth = 5;
+// ===== お題リスト（MobileNetが知ってるカテゴリに合わせる） =====
+const PROMPTS = [
+  { ja: '猫',       keys: ['cat', 'tabby', 'persian', 'Egyptian cat'] },
+  { ja: '犬',       keys: ['dog', 'puppy', 'husky', 'poodle', 'Labrador'] },
+  { ja: '鳥',       keys: ['bird', 'robin', 'sparrow', 'jay', 'finch', 'crane'] },
+  { ja: '魚',       keys: ['fish', 'goldfish', 'shark', 'stingray'] },
+  { ja: '象',       keys: ['elephant'] },
+  { ja: 'ライオン', keys: ['lion'] },
+  { ja: '自転車',   keys: ['bicycle', 'bike', 'mountain bike'] },
+  { ja: '車',       keys: ['car', 'automobile', 'vehicle', 'sports car', 'jeep'] },
+  { ja: '飛行機',   keys: ['airplane', 'aircraft', 'airliner', 'plane'] },
+  { ja: '傘',       keys: ['umbrella'] },
+  { ja: 'バナナ',   keys: ['banana'] },
+  { ja: 'りんご',   keys: ['apple', 'Granny Smith'] },
+  { ja: 'ピザ',     keys: ['pizza'] },
+  { ja: 'ケーキ',   keys: ['cake', 'birthday cake', 'chocolate cake'] },
+  { ja: 'コーヒー', keys: ['coffee', 'espresso', 'coffee mug', 'cup'] },
+  { ja: 'めがね',   keys: ['glasses', 'sunglasses', 'sunglass'] },
+  { ja: '時計',     keys: ['clock', 'watch', 'wall clock', 'analog clock'] },
+  { ja: 'ギター',   keys: ['guitar', 'acoustic guitar', 'electric guitar'] },
+  { ja: '家',       keys: ['house', 'home', 'bungalow', 'cottage'] },
+  { ja: '花',       keys: ['flower', 'bouquet', 'daisy', 'rose'] },
+];
+
+// ===== State =====
+let model = null;
+let currentPrompt = null;
+let tool = 'pen';
+let isDrawing = false;
+let score = { correct: 0, wrong: 0 };
+let classifyInterval = null;
+let correctShown = false;
+let modelReady = false;
+
+// ===== Canvas =====
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
 ctx.lineCap = 'round';
-ctx.strokeStyle = 'black';
+ctx.lineJoin = 'round';
 
-let drawing = false;
-
-// マウス描画
-canvas.addEventListener('mousedown', e => { drawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); });
-canvas.addEventListener('mousemove', e => { if(drawing){ ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke(); } });
-canvas.addEventListener('mouseup', e => { drawing = false; });
-
-// タッチ描画
-canvas.addEventListener('touchstart', e => {
-    e.preventDefault();
-    drawing = true;
-    let t = e.touches[0];
-    let rect = canvas.getBoundingClientRect();
-    ctx.beginPath();
-    ctx.moveTo(t.clientX - rect.left, t.clientY - rect.top);
-});
-canvas.addEventListener('touchmove', e => {
-    e.preventDefault();
-    if(drawing){
-        let t = e.touches[0];
-        let rect = canvas.getBoundingClientRect();
-        ctx.lineTo(t.clientX - rect.left, t.clientY - rect.top);
-        ctx.stroke();
-    }
-});
-canvas.addEventListener('touchend', e => { drawing = false; });
-
-// クリアボタン
-document.getElementById('clearBtn').addEventListener('click', () => {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    document.getElementById('result').textContent = "ここに判定結果が出ます";
-});
-
-// Quick, Draw モデルロード
-let model;
-async function loadModel() {
-    model = await quickdrawDoodleClassifier.load();
-    console.log("モデルロード完了");
+// canvasをレスポンシブに
+function resizeCanvas() {
+  const maxW = Math.min(480, window.innerWidth - 32);
+  canvas.style.width = maxW + 'px';
+  canvas.style.height = (maxW * 360 / 480) + 'px';
 }
-loadModel();
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
-// リアルタイム判定
-setInterval(async () => {
-    if(!model) return;
-    let result = await model.classify(canvas);
-    if(result && result.length > 0){
-        document.getElementById('result').textContent = `判定: ${result[0].className} （${(result[0].score*100).toFixed(1)}%）`;
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sy };
+}
+
+canvas.addEventListener('mousedown', e => { isDrawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); });
+canvas.addEventListener('mousemove', e => {
+  if (!isDrawing) return;
+  const size = document.getElementById('sizeSlider').value;
+  ctx.lineWidth = tool === 'eraser' ? size * 4 : parseInt(size);
+  ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : '#111111';
+  const p = getPos(e);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+});
+canvas.addEventListener('mouseup', () => isDrawing = false);
+canvas.addEventListener('mouseleave', () => isDrawing = false);
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); isDrawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); }, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!isDrawing) return;
+  const size = document.getElementById('sizeSlider').value;
+  ctx.lineWidth = tool === 'eraser' ? size * 4 : parseInt(size);
+  ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : '#111111';
+  const p = getPos(e);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+}, { passive: false });
+canvas.addEventListener('touchend', () => isDrawing = false);
+
+function setTool(t) {
+  tool = t;
+  document.getElementById('penBtn').classList.toggle('active', t === 'pen');
+  document.getElementById('eraserBtn').classList.toggle('active', t === 'eraser');
+}
+
+function clearCanvas() {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('liveText').textContent = '描いてみて！';
+  document.getElementById('liveGuess').textContent = '';
+  document.getElementById('top5List').innerHTML = '<div style="color:var(--muted);font-size:0.85rem;font-weight:700">描き始めると判定が出るよ！</div>';
+  correctShown = false;
+}
+
+// ===== モデル読み込み =====
+async function loadModel() {
+  try {
+    document.getElementById('statusText').textContent = '🤖 TensorFlow.js モデルを読み込み中... (初回は10〜30秒かかります)';
+    model = await mobilenet.load({ version: 2, alpha: 0.5 });
+    modelReady = true;
+
+    document.getElementById('statusBox').style.display = 'none';
+    newPrompt();
+    startClassify();
+  } catch (e) {
+    document.getElementById('statusText').textContent = '⚠️ モデルの読み込みに失敗しました。ページをリロードしてください。';
+    console.error(e);
+  }
+}
+
+// ===== お題 =====
+function newPrompt() {
+  currentPrompt = PROMPTS[Math.floor(Math.random() * PROMPTS.length)];
+  document.getElementById('promptWord').innerHTML = `<em>${currentPrompt.ja}</em>`;
+  correctShown = false;
+  clearCanvas();
+}
+
+function skipPrompt() {
+  score.wrong++;
+  document.getElementById('wrongCount').textContent = score.wrong;
+  document.getElementById('totalCount').textContent = score.correct + score.wrong;
+  newPrompt();
+}
+
+// ===== リアルタイム判定 =====
+function startClassify() {
+  classifyInterval = setInterval(async () => {
+    if (!model || !currentPrompt || correctShown) return;
+
+    // 描画量チェック（まっさらなら判定しない）
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let darkPixels = 0;
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      if (imgData.data[i] < 200) darkPixels++;
     }
-}, 1000); // 1秒ごとに判定
+    if (darkPixels < 30) {
+      document.getElementById('liveText').textContent = '描いてみて！';
+      document.getElementById('liveGuess').textContent = '';
+      return;
+    }
+
+    try {
+      const preds = await model.classify(canvas, 10);
+      updateTop5(preds);
+
+      // 正解チェック
+      const keys = currentPrompt.keys.map(k => k.toLowerCase());
+      const hit = preds.find(p => {
+        const cls = p.className.toLowerCase();
+        return keys.some(k => cls.includes(k) || k.includes(cls.split(',')[0].trim()));
+      });
+
+      if (hit && hit.probability > 0.08) {
+        const pct = (hit.probability * 100).toFixed(0);
+        document.getElementById('liveText').textContent = `"${currentPrompt.ja}" を検出！`;
+        document.getElementById('liveGuess').textContent = `${pct}%`;
+
+        if (hit.probability > 0.15 && !correctShown) {
+          correctShown = true;
+          showCorrect(pct);
+        }
+      } else {
+        document.getElementById('liveText').textContent = '判定中...';
+        document.getElementById('liveGuess').textContent = preds[0] ? `${(preds[0].probability * 100).toFixed(0)}%` : '';
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, 800);
+}
+
+function updateTop5(preds) {
+  const top5 = preds.slice(0, 5);
+  const list = document.getElementById('top5List');
+  list.innerHTML = top5.map((p, i) => {
+    const pct = (p.probability * 100).toFixed(1);
+    const label = p.className.split(',')[0].trim();
+    const isHit = currentPrompt.keys.some(k => label.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(label.toLowerCase()));
+    return `
+      <div class="top5-item ${i === 0 ? 'rank1' : ''}">
+        <div class="top5-rank">${i + 1}</div>
+        <div class="top5-label" style="${isHit ? 'color:var(--green)' : ''}">${label} ${isHit ? '✓' : ''}</div>
+        <div class="top5-bar-wrap">
+          <div class="top5-bar" style="width:${Math.min(pct * 3, 100)}%"></div>
+        </div>
+        <div class="top5-score">${pct}%</div>
+      </div>`;
+  }).join('');
+}
+
+function showCorrect(pct) {
+  // フラッシュ
+  const flash = document.getElementById('hitFlash');
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 500);
+
+  // バナー
+  score.correct++;
+  document.getElementById('correctCount').textContent = score.correct;
+  document.getElementById('totalCount').textContent = score.correct + score.wrong;
+
+  const banner = document.getElementById('correctBanner');
+  document.getElementById('correctSub').textContent = `「${currentPrompt.ja}」を ${pct}% の確信で当てた！`;
+  banner.classList.add('show');
+
+  setTimeout(() => {
+    banner.classList.remove('show');
+    newPrompt();
+  }, 2200);
+}
+
+// ===== スタート =====
+loadModel();
 </script>
+
 </body>
 </html>

@@ -487,10 +487,8 @@ box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
 
 <script>
 const MODEL_URL = 'https://oasoobi.github.io/playground/quickdrawmodoki/model.json';
-const CLASSES_URL = 'https://oasoobi.github.io/playground/quickdrawmodoki/classes.json';
-
-// classes.jsonから動的に読み込む（フォールバックあり）
-let CLASSES = ['cat', 'dog', 'fish', 'house', 'tree', 'car', 'airplane', 'bicycle', 'umbrella', 'flower'];
+// classes.json の内容を直接埋め込み
+const CLASSES = ["cat", "dog", "fish", "house", "tree", "car", "airplane", "bicycle", "umbrella", "flower"];
 
 // 英語→日本語マッピング（よく使われるQuickDrawカテゴリを網羅）
 const JA_MAP = {

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Quick Draw風リアルタイム判定</title>
+<style>
+  body { font-family: sans-serif; text-align: center; }
+  canvas { border: 1px solid #000; touch-action: none; }
+  #result { font-size: 1.2em; margin-top: 10px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/quickdraw-doodle-classifier"></script>
+</head>
+<body>
+<h1>Quick Draw風ゲーム</h1>
+<p>描いてみてね！リアルタイムで判定されます</p>
+<canvas id="canvas" width="280" height="280"></canvas>
+<br>
+<button id="clearBtn">クリア</button>
+<div id="result">ここに判定結果が出ます</div>
+
+<script>
+let canvas = document.getElementById('canvas');
+let ctx = canvas.getContext('2d');
+ctx.lineWidth = 5;
+ctx.lineCap = 'round';
+ctx.strokeStyle = 'black';
+
+let drawing = false;
+
+// マウス描画
+canvas.addEventListener('mousedown', e => { drawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); });
+canvas.addEventListener('mousemove', e => { if(drawing){ ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke(); } });
+canvas.addEventListener('mouseup', e => { drawing = false; });
+
+// タッチ描画
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    drawing = true;
+    let t = e.touches[0];
+    let rect = canvas.getBoundingClientRect();
+    ctx.beginPath();
+    ctx.moveTo(t.clientX - rect.left, t.clientY - rect.top);
+});
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if(drawing){
+        let t = e.touches[0];
+        let rect = canvas.getBoundingClientRect();
+        ctx.lineTo(t.clientX - rect.left, t.clientY - rect.top);
+        ctx.stroke();
+    }
+});
+canvas.addEventListener('touchend', e => { drawing = false; });
+
+// クリアボタン
+document.getElementById('clearBtn').addEventListener('click', () => {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    document.getElementById('result').textContent = "ここに判定結果が出ます";
+});
+
+// Quick, Draw モデルロード
+let model;
+async function loadModel() {
+    model = await quickdrawDoodleClassifier.load();
+    console.log("モデルロード完了");
+}
+loadModel();
+
+// リアルタイム判定
+setInterval(async () => {
+    if(!model) return;
+    let result = await model.classify(canvas);
+    if(result && result.length > 0){
+        document.getElementById('result').textContent = `判定: ${result[0].className} （${(result[0].score*100).toFixed(1)}%）`;
+    }
+}, 1000); // 1秒ごとに判定
+</script>
+</body>
+</html>

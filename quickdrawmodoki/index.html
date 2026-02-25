@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Quick Draw もどき</title>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Boogaloo&family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap');
 
@@ -486,7 +486,7 @@ box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
 </div>
 
 <script>
-const MODEL_URL = 'https://oasoobi.github.io/playground/quickdrawmodoki/model.json';
+const MODEL_URL = 'https://oasoobi.github.io/playground/quickdrawmodoki/model.json?v=' + Date.now();
 // classes.json の内容を直接埋め込み
 const CLASSES = ["cat", "dog", "fish", "house", "tree", "car", "airplane", "bicycle", "umbrella", "flower"];
 
@@ -581,16 +581,6 @@ function clearCanvas() {
 async function loadModel() {
   try {
     animateProgress();
-
-    // classes.json を先に読み込む
-    try {
-      const res = await fetch(CLASSES_URL);
-      const json = await res.json();
-      CLASSES = json;
-      console.log('✅ classes.json loaded:', CLASSES);
-    } catch (e) {
-      console.warn('classes.json の読み込み失敗、フォールバック使用:', e);
-    }
 
     model = await tf.loadLayersModel(MODEL_URL);
     // ウォームアップ

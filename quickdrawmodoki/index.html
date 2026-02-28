@@ -582,7 +582,7 @@ async function loadModel() {
   try {
     animateProgress();
 
-    model = await tf.loadLayersModel(MODEL_URL);
+    model = await tf.loadGraphModel(MODEL_URL);
     // ウォームアップ
     const dummy = tf.zeros([1, 28, 28, 1]);
     model.predict(dummy).dispose();

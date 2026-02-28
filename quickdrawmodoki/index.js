@@ -125,7 +125,7 @@ async function loadModel() {
         newRound();
         startClassify();
     } catch (e) {
-        document.getElementById('loadingText').textContent = '⚠️ モデル読み込み失敗。ページをリロードしてください。';
+        document.getElementById('loadingText').textContent = 'モデル読み込みに失敗しました。再読み込みを試してください';
         console.error(e);
     }
 }
@@ -289,3 +289,4 @@ function showResult(correct, title, detail) {
 }
 
 loadModel();
+showAboutDialog();
